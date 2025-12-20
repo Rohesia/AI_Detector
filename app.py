@@ -1,64 +1,99 @@
+import os
+# Forza l'uso di PyTorch ed evita conflitti con TensorFlow (causa dell'errore DLL)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['USE_TF'] = '0'
+os.environ['USE_TORCH'] = '1'
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import torch
+import re
 from transformers import BertTokenizer, BertForSequenceClassification
 
 app = Flask(__name__)
-# CORS permette al frontend (React) di comunicare con questo server Python
 CORS(app)
 
-# --- CONFIGURAZIONE MODELLO ---
-# Assicurati che il percorso del file .pth sia corretto rispetto a dove si trova app.py
-MODEL_PATH = "pth/best_bert_final.pth" 
-# Usa lo stesso modello base che hai usato durante il training
+# --- CONFIGURAZIONE PERCORSI ---
+# Coerente con la tua struttura cartelle: Progetto/pth/best_bert_final.pth
+MODEL_PATH = os.path.join("pth", "best_bert_final.pth")
 MODEL_NAME = "bert-base-uncased" 
 
-# Imposta il dispositivo (GPU se disponibile, altrimenti CPU)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-print(f"Caricamento modello su: {device}...")
+# --- FUNZIONE DI PULIZIA (Fondamentale per la coerenza) ---
+def clean_text_simple(text):
+    """
+    Simula la pulizia fatta nel notebook (text_cleaned_lem).
+    Il modello si aspetta testo senza caratteri speciali e minuscolo.
+    """
+    text = text.lower()
+    text = re.sub(r'[^\w\s]', '', text) # Rimuove punteggiatura
+    text = re.sub(r'\d+', '', text)      # Rimuove numeri
+    return text.strip()
 
-# Carichiamo il tokenizer e la struttura del modello
+# --- CARICAMENTO MODELLO ---
+print(f"Caricamento modello su: {device}...")
 tokenizer = BertTokenizer.from_pretrained(MODEL_NAME)
 model = BertForSequenceClassification.from_pretrained(MODEL_NAME, num_labels=2)
 
-# Carichiamo i pesi dal tuo file .pth
 try:
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
-    model.to(device)
-    model.eval() # Imposta il modello in modalità valutazione
-    print("Modello caricato con successo!")
+    if os.path.exists(MODEL_PATH):
+        # Carica i pesi salvati nel notebook
+        model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+        model.to(device)
+        model.eval()
+        print("✅ Modello BERT caricato con successo!")
+    else:
+        print(f"❌ ERRORE: File {MODEL_PATH} non trovato!")
 except Exception as e:
-    print(f"Errore nel caricamento del modello: {e}")
+    print(f"❌ Errore durante il caricamento: {e}")
 
-# --- ROTTA PER LA PREDIZIONE ---
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.json
-    text = data.get('text', '')
+    raw_text = data.get('text', '')
 
-    if not text:
-        return jsonify({"error": "Nessun testo fornito"}), 400
+    if not raw_text or len(raw_text) < 10:
+        return jsonify({"error": "Testo troppo breve"}), 400
 
-    # Tokenizzazione del testo ricevuto
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512).to(device)
+    # 1. Pulizia del testo per coerenza con 'text_cleaned_lem'
+    cleaned_text = clean_text_simple(raw_text)
+
+    # 2. Tokenizzazione (Usa lo stesso MAX_LENGTH del notebook, solitamente 512 o meno)
+    inputs = tokenizer(
+        cleaned_text, 
+        return_tensors="pt", 
+        truncation=True, 
+        padding=True, 
+        max_length=512
+    ).to(device)
     
     with torch.no_grad():
         outputs = model(**inputs)
-        # Otteniamo la classe con la probabilità più alta
-        prediction = torch.argmax(outputs.logits, dim=1).item()
-        # Calcoliamo la percentuale di confidenza
         probs = torch.nn.functional.softmax(outputs.logits, dim=1)
-        confidence = torch.max(probs).item()
+        
+        # Estrazione probabilità
+        prob_human = probs[0][0].item()
+        prob_ai = probs[0][1].item()
+        
+        # Debug nel terminale per vedere i valori reali
+        print(f"DEBUG -> Raw Score - Human: {prob_human:.4f}, AI: {prob_ai:.4f}")
+        
+        prediction = torch.argmax(probs, dim=1).item()
+        confidence = max(prob_human, prob_ai)
 
-    # Definiamo i label (controlla se nel tuo training 1 è AI e 0 è Human)
+    # 3. Mappatura Label coerente con: human=0, ai=1
     label = "AI Generated" if prediction == 1 else "Human Written"
     
     return jsonify({
         "label": label,
-        "confidence": round(confidence * 100, 2)
+        "confidence": round(confidence * 100, 2),
+        "probabilities": {
+            "human": round(prob_human * 100, 2),
+            "ai": round(prob_ai * 100, 2)
+        }
     })
 
 if __name__ == '__main__':
-    # Il server girerà su http://localhost:5000
-    app.run(port=5000, debug=True)
+    print("Server avviato su http://localhost:5000")
+    app.run(port=5000, debug=False) # Debug False per evitare doppi caricamenti pesanti di BERT

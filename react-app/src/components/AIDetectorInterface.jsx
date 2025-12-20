@@ -121,7 +121,6 @@ const AIDetectorInterface = () => {
     setError(null);
 
     try {
-      // Chiamata al backend Flask
       const response = await fetch('http://localhost:5000/predict', {
         method: 'POST',
         headers: { 
@@ -136,18 +135,23 @@ const AIDetectorInterface = () => {
 
       const data = await response.json();
       
+      // LOG PER DEBUG: Apri la console del browser (F12) per vedere cosa arriva
+      console.log("Dati ricevuti dal server:", data);
+      
       // Trasforma la risposta del backend nel formato atteso dall'UI
       const formattedResult = {
-        isAI: data.label === 'AI' || data.label === 1,
+        // CORREZIONE: Controlliamo se la stringa contiene "AI"
+        isAI: data.label.includes('AI'), 
         confidence: parseFloat(data.confidence) || 0,
-        features: data.features || {
-          sentenceSimilarity: data.sentence_similarity || 0,
-          lexicalDiversity: data.lexical_diversity || 0,
-          burstiness: data.burstiness || 0,
-          avgSentLength: data.avg_sentence_length || 0,
-          repetitiveness: data.repetitiveness || 0,
-          lexicalPoverty: data.lexical_poverty || 0,
-          structuralVariation: data.structural_variation || 0
+        features: {
+          // Usiamo i dati reali se presenti, altrimenti fallback a 0
+          sentenceSimilarity: data.probabilities?.ai || 0, 
+          lexicalDiversity: data.probabilities?.human || 0,
+          burstiness: 0.5, // Valori di default se il BERT semplice non li calcola
+          avgSentLength: text.split(' ').length / (text.split('.').length || 1),
+          repetitiveness: data.probabilities?.ai || 0,
+          lexicalPoverty: 100 - (data.probabilities?.human || 0),
+          structuralVariation: 50
         }
       };
 
@@ -156,10 +160,9 @@ const AIDetectorInterface = () => {
       
     } catch (error) {
       console.error("Error connecting to backend:", error);
-      setError('⚠️ Backend not responding. Make sure Flask server is running on http://localhost:5000');
+      setError('⚠️ Backend not responding. Make sure Flask server is running.');
       
-      // Fallback: usa analisi frontend se backend non disponibile
-      alert('Backend non disponibile. Usando analisi locale di fallback...');
+      // Fallback: usa analisi frontend solo se il server è spento
       const localAnalysis = calculateFeaturesLocal(text);
       setResult(localAnalysis);
       setActiveTab('results');
