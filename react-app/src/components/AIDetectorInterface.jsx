@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Brain, Zap, Eye, Activity, Sparkles, AlertCircle, CheckCircle, TrendingUp, BarChart3, Waves } from 'lucide-react';
 
 // ============================================================================
-// COMPONENTI HELPER (definiti PRIMA del componente principale)
+// COMPONENTI HELPER
 // ============================================================================
 
 const ResultGauge = ({ value, label, color }) => {
@@ -24,7 +24,7 @@ const ResultGauge = ({ value, label, color }) => {
             stroke={color}
             strokeWidth="8"
             strokeDasharray={`${(value / 100) * 125} 125`}
-            className="transition-all duration-1000"
+            style={{ transition: 'all 1s' }}
           />
           <circle cx="50" cy="45" r="3" fill={color} />
           <line
@@ -35,10 +35,16 @@ const ResultGauge = ({ value, label, color }) => {
             stroke={color}
             strokeWidth="2"
             transform={`rotate(${rotation} 50 45)`}
-            className="transition-all duration-1000"
+            style={{ transition: 'all 1s' }}
           />
         </svg>
-        <div className="absolute inset-0 flex items-end justify-center">
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'center'
+        }}>
           <span className="text-2xl font-bold" style={{ color }}>{value.toFixed(1)}%</span>
         </div>
       </div>
@@ -47,7 +53,7 @@ const ResultGauge = ({ value, label, color }) => {
   );
 };
 
-const FeatureBar = ({ label, value, max, color }) => (
+const FeatureBar = ({ label, value, max, colorFrom, colorTo }) => (
   <div>
     <div className="flex justify-between text-sm mb-1">
       <span className="text-gray-400">{label}</span>
@@ -55,8 +61,11 @@ const FeatureBar = ({ label, value, max, color }) => (
     </div>
     <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
       <div
-        className={`h-full bg-gradient-to-r ${color} transition-all duration-1000`}
-        style={{ width: `${(value / max) * 100}%` }}
+        className="h-full transition-all duration-1000"
+        style={{
+          width: `${(value / max) * 100}%`,
+          background: `linear-gradient(to right, ${colorFrom}, ${colorTo})`
+        }}
       />
     </div>
   </div>
@@ -80,8 +89,8 @@ const AIDetectorInterface = () => {
   const [result, setResult] = useState(null);
   const [activeTab, setActiveTab] = useState('input');
   const [pulseAnimation, setPulseAnimation] = useState(false);
+  const [error, setError] = useState(null);
   
-  // Generate floating neurons for background - initialized once
   const [neurons] = useState(() => 
     Array.from({ length: 20 }, (_, i) => ({
       id: i,
@@ -97,7 +106,75 @@ const AIDetectorInterface = () => {
   
   const exampleHuman = "I can't believe what happened today! So I was running late (as usual lol) and literally spilled coffee all over my shirt right before the meeting. Had to wear my gym hoodie... super professional. But honestly? Best meeting ever. Sometimes chaos works in your favor, you know?";
 
-  const calculateFeatures = (inputText) => {
+  // ============================================================================
+  // ANALISI CON BACKEND FLASK
+  // ============================================================================
+  
+  const analyzeText = async () => {
+    if (text.trim().length < 50) {
+      alert('Please enter at least 50 characters for accurate analysis.');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setPulseAnimation(true);
+    setError(null);
+
+    try {
+      // Chiamata al backend Flask
+      const response = await fetch('http://localhost:5000/predict', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: text }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Trasforma la risposta del backend nel formato atteso dall'UI
+      const formattedResult = {
+        isAI: data.label === 'AI' || data.label === 1,
+        confidence: parseFloat(data.confidence) || 0,
+        features: data.features || {
+          sentenceSimilarity: data.sentence_similarity || 0,
+          lexicalDiversity: data.lexical_diversity || 0,
+          burstiness: data.burstiness || 0,
+          avgSentLength: data.avg_sentence_length || 0,
+          repetitiveness: data.repetitiveness || 0,
+          lexicalPoverty: data.lexical_poverty || 0,
+          structuralVariation: data.structural_variation || 0
+        }
+      };
+
+      setResult(formattedResult);
+      setActiveTab('results');
+      
+    } catch (error) {
+      console.error("Error connecting to backend:", error);
+      setError('⚠️ Backend not responding. Make sure Flask server is running on http://localhost:5000');
+      
+      // Fallback: usa analisi frontend se backend non disponibile
+      alert('Backend non disponibile. Usando analisi locale di fallback...');
+      const localAnalysis = calculateFeaturesLocal(text);
+      setResult(localAnalysis);
+      setActiveTab('results');
+      
+    } finally {
+      setIsAnalyzing(false);
+      setPulseAnimation(false);
+    }
+  };
+
+  // ============================================================================
+  // FALLBACK: ANALISI LOCALE (se backend non disponibile)
+  // ============================================================================
+  
+  const calculateFeaturesLocal = (inputText) => {
     const sentences = inputText.split(/[.!?]+/).filter(s => s.trim().length > 0);
     const words = inputText.toLowerCase().match(/\b\w+\b/g) || [];
     
@@ -116,7 +193,6 @@ const AIDetectorInterface = () => {
         acc + (1 - Math.abs(len - sentLengths[i]) / Math.max(len, sentLengths[i])), 0
       ) / (sentLengths.length - 1) : 0.5;
 
-    // AI scoring heuristics
     const aiScore = (
       (sentenceSimilarity * 35) + 
       ((1 - lexicalDiversity) * 30) +
@@ -142,27 +218,9 @@ const AIDetectorInterface = () => {
     };
   };
 
-  const analyzeText = () => {
-    if (text.trim().length < 50) {
-      alert('Please enter at least 50 characters for accurate analysis.');
-      return;
-    }
-
-    setIsAnalyzing(true);
-    setPulseAnimation(true);
-
-    setTimeout(() => {
-      const analysis = calculateFeatures(text);
-      setResult(analysis);
-      setIsAnalyzing(false);
-      setActiveTab('results');
-      setPulseAnimation(false);
-    }, 2500);
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-white p-8 relative overflow-hidden">
-      {/* Animated Neural Network Background */}
+    <div className="min-h-screen">
+      {/* Background Neurons */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {neurons.map(neuron => (
           <div
@@ -180,32 +238,41 @@ const AIDetectorInterface = () => {
         ))}
       </div>
 
-      <div className="max-w-7xl mx-auto relative z-10">
+      <div className="max-w-7xl">
         {/* Header */}
         <div className="text-center mb-12">
           <div className="flex items-center justify-center gap-4 mb-4">
             <Brain className={`w-16 h-16 text-cyan-400 ${pulseAnimation ? 'animate-pulse' : ''}`} />
-            <h1 className="text-6xl font-black bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-clip-text text-transparent">
-              NEURAL PROBE
-            </h1>
+            <h1 className="text-6xl">NEURAL PROBE</h1>
           </div>
           <p className="text-xl text-gray-300 flex items-center justify-center gap-2">
             <Zap className="w-5 h-5 text-yellow-400" />
             Advanced AI Detection System
             <Sparkles className="w-5 h-5 text-purple-400" />
           </p>
+          {error && (
+            <div style={{
+              marginTop: '1rem',
+              padding: '0.75rem',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: '0.5rem',
+              color: '#fca5a5',
+              fontSize: '0.875rem'
+            }}>
+              {error}
+            </div>
+          )}
         </div>
 
-        {/* Main Interface */}
+        {/* Main Panel */}
         <div className="bg-slate-900/50 backdrop-blur-xl rounded-3xl border border-cyan-500/30 shadow-2xl overflow-hidden">
-          {/* Tab Navigation */}
+          {/* Tabs */}
           <div className="flex border-b border-cyan-500/30">
             <button
               onClick={() => setActiveTab('input')}
               className={`flex-1 py-4 px-6 font-semibold transition-all ${
-                activeTab === 'input'
-                  ? 'bg-cyan-500/20 text-cyan-400 border-b-2 border-cyan-400'
-                  : 'text-gray-400 hover:text-cyan-300'
+                activeTab === 'input' ? 'bg-cyan-500/20' : ''
               }`}
             >
               <Eye className="w-5 h-5 inline mr-2" />
@@ -215,10 +282,8 @@ const AIDetectorInterface = () => {
               onClick={() => result && setActiveTab('results')}
               disabled={!result}
               className={`flex-1 py-4 px-6 font-semibold transition-all ${
-                activeTab === 'results'
-                  ? 'bg-purple-500/20 text-purple-400 border-b-2 border-purple-400'
-                  : result ? 'text-gray-400 hover:text-purple-300' : 'text-gray-600 cursor-not-allowed'
-              }`}
+                activeTab === 'results' ? 'bg-purple-500/20' : ''
+              } ${!result ? 'text-gray-600' : ''}`}
             >
               <Activity className="w-5 h-5 inline mr-2" />
               Neural Report
@@ -236,7 +301,7 @@ const AIDetectorInterface = () => {
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="Paste your text here... (minimum 50 characters)"
-                  className="w-full h-64 bg-slate-800/50 border border-cyan-500/30 rounded-xl p-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent resize-none"
+                  className="w-full"
                   disabled={isAnalyzing}
                 />
                 <div className="mt-2 text-sm text-gray-400">
@@ -247,14 +312,14 @@ const AIDetectorInterface = () => {
               <div className="flex gap-4 mb-6">
                 <button
                   onClick={() => setText(exampleAI)}
-                  className="flex-1 py-2 px-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 hover:bg-red-500/30 transition-all"
+                  className="flex-1 py-2 bg-red-500/20"
                   disabled={isAnalyzing}
                 >
                   🤖 Load AI Example
                 </button>
                 <button
                   onClick={() => setText(exampleHuman)}
-                  className="flex-1 py-2 px-4 bg-green-500/20 border border-green-500/50 rounded-lg text-green-300 hover:bg-green-500/30 transition-all"
+                  className="flex-1 py-2 bg-green-500/20"
                   disabled={isAnalyzing}
                 >
                   ✍️ Load Human Example
@@ -264,16 +329,16 @@ const AIDetectorInterface = () => {
               <button
                 onClick={analyzeText}
                 disabled={isAnalyzing || text.length < 50}
-                className="w-full py-4 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-xl font-bold text-lg hover:from-cyan-600 hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                className="w-full disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isAnalyzing ? (
                   <>
-                    <Waves className="w-6 h-6 animate-spin" />
+                    <Waves className="w-6 h-6 animate-spin" style={{ display: 'inline-block', marginRight: '0.75rem' }} />
                     Analyzing Neural Patterns...
                   </>
                 ) : (
                   <>
-                    <Brain className="w-6 h-6" />
+                    <Brain className="w-6 h-6" style={{ display: 'inline-block', marginRight: '0.75rem' }} />
                     Initiate Neural Scan
                   </>
                 )}
@@ -284,11 +349,8 @@ const AIDetectorInterface = () => {
           {/* Results Tab */}
           {activeTab === 'results' && result && (
             <div className="p-8">
-              {/* Main Result */}
               <div className={`mb-8 p-6 rounded-2xl border-2 ${
-                result.isAI
-                  ? 'bg-red-500/10 border-red-500'
-                  : 'bg-green-500/10 border-green-500'
+                result.isAI ? 'bg-red-500/10 border-red-500' : 'bg-green-500/10 border-green-500'
               }`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
@@ -312,7 +374,6 @@ const AIDetectorInterface = () => {
                 </div>
               </div>
 
-              {/* Feature Analysis */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 <div className="bg-slate-800/50 p-6 rounded-xl border border-cyan-500/30">
                   <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
@@ -324,19 +385,22 @@ const AIDetectorInterface = () => {
                       label="Structural Repetition"
                       value={result.features.repetitiveness}
                       max={100}
-                      color="from-red-500 to-orange-500"
+                      colorFrom="#ef4444"
+                      colorTo="#f97316"
                     />
                     <FeatureBar
                       label="Lexical Poverty"
                       value={result.features.lexicalPoverty}
                       max={100}
-                      color="from-orange-500 to-yellow-500"
+                      colorFrom="#f97316"
+                      colorTo="#eab308"
                     />
                     <FeatureBar
                       label="Burstiness Index"
                       value={result.features.structuralVariation}
                       max={100}
-                      color="from-yellow-500 to-green-500"
+                      colorFrom="#eab308"
+                      colorTo="#22c55e"
                     />
                   </div>
                 </div>
@@ -371,8 +435,9 @@ const AIDetectorInterface = () => {
                 </div>
               </div>
 
-              {/* Explanation */}
-              <div className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 p-6 rounded-xl border border-blue-500/30">
+              <div className="p-6 rounded-xl border border-blue-500/30" style={{
+                background: 'linear-gradient(to right, rgba(30, 58, 138, 0.3), rgba(88, 28, 135, 0.3))'
+              }}>
                 <h3 className="text-xl font-bold mb-3 flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-yellow-400" />
                   Neural Interpretation
