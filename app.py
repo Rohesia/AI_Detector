@@ -316,6 +316,7 @@ def calculate_artificial_informality(text):
 def detect_generic_motivation(text):
     """Rileva linguaggio motivazionale generico - ULTRA AGGRESSIVO"""
     
+    # Database completo di frasi motivazionali AI
     motivation_phrases = [
         'dont worry', 'keep going', 'small steps', 'be patient',
         'stay positive', 'you got this', 'believe in yourself',
@@ -337,20 +338,21 @@ def detect_generic_motivation(text):
     
     text_lower = text.lower()
     
-    # Conta frasi e parole
+    # Conta frasi (peso massimo)
     phrase_matches = sum(1 for phrase in motivation_phrases if phrase in text_lower)
+    
+    # Conta parole
     word_matches = sum(1 for word in motivation_words if f' {word} ' in f' {text_lower} ' or text_lower.startswith(word + ' ') or text_lower.endswith(' ' + word))
     
-    # Base score senza cap rigido
+    # Score con penalità esponenziale per molti match
     base_score = (phrase_matches * 4) + (word_matches * 0.8)
     
-    # BONUS: test breve + molte frasi = boost massimo
+    # BONUS: Se ci sono 5+ frasi motivazionali in un testo corto = SICURO AI
     if phrase_matches >= 5 and len(text) < 500:
-        base_score *= 1.8  # Molto più aggressivo
+        base_score *= 1.5
     
-    # Limite massimo aumentato
-    return min(base_score, 50)  # prima era 20
-
+    
+    return min(base_score, 20)
 
 def calculate_lexical_genericity(text):
     """Misura vocabolario generico - ULTRA AGGRESSIVO"""
@@ -434,18 +436,13 @@ def extract_enhanced_features(text):
     
     features = extract_stylometric_signature(text)
     
-    if disguise_score >= 5.5:  # soglia un po' più aggressiva
-        return {
-            'label': '🤖 AI-Generated',
-            'confidence': 95.0,
-            'probabilities': {'human': 5.0, 'ai': 95.0},
-            'features': features,
-            'model_used': 'Disguise Detection Override',
-            
-            'disguise_score': round(disguise_score, 2),
-            'detection_note': '🚨 ULTRA-AGGRESSIVE AI override for motivational text'
-        }
-
+    # === CALCOLO DISGUISE SCORE AGGIORNATO ===
+    disguise_score = (
+        features.get('artificial_informality', 0) * 0.25 + # +5%
+        features.get('generic_motivation_score', 0) * 0.35 + # +5%
+        features.get('perfect_grammar_no_punct', 0) * 0.30 + # +10%
+        features.get('lexical_genericity', 0) * 0.10
+    )
     
     # TRIGGER AGGRESSIVO: Se mancano punti E ci sono frasi motivazionali
     if text.count('.') == 0 and features.get('generic_motivation_score', 0) > 10:
