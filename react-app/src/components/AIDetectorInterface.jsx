@@ -6,6 +6,15 @@ import jsPDF from 'jspdf';
 // COMPONENTI HELPER
 // ============================================================================
 
+/* 
+const response = await fetch("http://backend:8000/analyze", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ text })
+});
+
+ */
+
 const ResultGauge = ({ value, label, color }) => {
   const rotation = (value / 100) * 180 - 90;
   
@@ -1044,6 +1053,8 @@ const downloadReport = () => {
     </div>
   );
 };
+
+
 
 export default AIDetectorInterface;
 
