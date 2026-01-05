@@ -2,6 +2,10 @@
   <img src="assets/architecture.avif" alt="Human vs AI Concept" width="800">
 </p>
 
+<p align="center">
+  <img src="assets/ai_ex.gif" width="800" />
+</p>
+
 
 
 # 🧠 AI Detector – Hybrid BERT & Stylometric Analysis
