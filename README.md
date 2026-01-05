@@ -185,7 +185,7 @@ La comunicazione tra frontend e backend avviene tramite service name Docker, gar
 
 <p align="center">
   <img src="assets/tab_pred.png" width="800">
-  <img src="assets/tab_seq.png" width="200">
+  <img src="assets/tab_seq.png" width="400">
 </p>
 
 
