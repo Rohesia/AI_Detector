@@ -1,3 +1,6 @@
+![System Architecture](assets/architecture.png)
+
+
 # 🧠 AI Detector – Hybrid BERT & Stylometric Analysis
 
 ## 📌 Overview
@@ -229,7 +232,7 @@ Questo approccio garantisce:
 
 Dal punto di vista architetturale, la gestione del database è isolata nel file `db.py`.
 
-Il backend Flask:
+Il backend **FastAPI**:
 1. Riceve il testo dall’utente
 2. Esegue la predizione tramite il modello AI
 3. Restituisce il risultato al frontend
